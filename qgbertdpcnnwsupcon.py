@@ -6,7 +6,7 @@ from transformers import BertTokenizer, TFBertModel, create_optimizer
 from tensorflow import keras
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
-# ======= 1. 参数设置 =======
+# ======= 1. Parameter Settings =======
 train_file = "/root/data/train.tsv"
 dev_file = "/root/data/dev.tsv"
 test_file = "/root/data/test.tsv"
@@ -19,11 +19,11 @@ batch_size = 16
 num_blocks = 2
 epochs = 5
 
-# 加权方式设置
-WEIGHT_TYPE = "dynamic"   # "dynamic" or "static"
-alpha_static = 0.25       # 静态加权用（如消融时也可换成0.5等）
+# Weight type settings
+WEIGHT_TYPE = "dynamic"   
+alpha_static = 0.25       
 
-# ======= 2. 数据加载 =======
+# ======= 2. Data Loading =======
 def load_data(file):
     df = pd.read_csv(file, sep="\t")
     texts = df['text_a'].astype(str).tolist()
@@ -34,7 +34,7 @@ texts_train, y_train, _ = load_data(train_file)
 texts_val, y_val, _ = load_data(dev_file)
 texts_test, y_test, test_df = load_data(test_file)
 
-# ======= 3. 分词编码 =======
+# ======= 3. Tokenization and Encoding =======
 tokenizer = BertTokenizer.from_pretrained(bert_dir)
 def encode(texts):
     return tokenizer(
@@ -57,12 +57,12 @@ X_train = batch_encode(texts_train)
 X_val = batch_encode(texts_val)
 X_test = batch_encode(texts_test)
 
-# ======= 4. Mish激活 =======
+# ======= 4. Mish Activation =======
 def mish(x):
     return x * tf.math.tanh(tf.math.softplus(x))
 keras.utils.get_custom_objects().update({'mish': keras.layers.Activation(mish)})
 
-# ======= 5. SupConLoss定义 =======
+# ======= 5. SupConLoss Definition =======
 class SupConLoss(tf.keras.losses.Loss):
     def __init__(self, temperature=0.10, name='supcon_loss'):
         super().__init__(name=name)
@@ -139,7 +139,7 @@ class DynamicWeightedSupConLoss(tf.keras.losses.Loss):
         loss = -tf.reduce_mean(weighted_log_prob)
         return loss
 
-# 损失实例化
+# Loss instantiation
 if WEIGHT_TYPE == "dynamic":
     supcon_loss_fn = DynamicWeightedSupConLoss(temperature=0.1, total_epochs=epochs, alpha_start=0.0, alpha_end=1.0)
     alpha = 0.25
@@ -147,7 +147,7 @@ elif WEIGHT_TYPE == "static":
     supcon_loss_fn = SupConLoss(temperature=0.1)
     alpha = alpha_static
 
-# ======= 6. 构建模型 =======
+# ======= 6. Model Construction =======
 def build_bert_dpcnn_supcon_model(max_seq_length=128, feature_dim=256, num_blocks=2):
     bert_model = TFBertModel.from_pretrained(bert_dir)
     input_ids = keras.Input(shape=(max_seq_length,), dtype=tf.int32, name='input_ids')
@@ -185,7 +185,7 @@ def build_bert_dpcnn_supcon_model(max_seq_length=128, feature_dim=256, num_block
     model = keras.Model(inputs=[input_ids, attention_mask, token_type_ids], outputs=[cls_output, features])
     return model
 
-# ======= 7. 优化器设置（warmup+递减）=======
+# ======= 7. Optimizer Settings (Warmup + Decay) =======
 model = build_bert_dpcnn_supcon_model(max_length, feature_dim, num_blocks)
 
 if y_train is not None:
@@ -215,7 +215,7 @@ def set_supcon_epoch(epoch):
     if hasattr(supcon_loss_fn, 'set_epoch'):
         supcon_loss_fn.set_epoch(epoch)
 
-# ======= 8. 训练 =======
+# ======= 8. Training =======
 if y_train is not None:
     train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(2048).batch(batch_size)
     val_ds = tf.data.Dataset.from_tensor_slices((X_val, y_val)).batch(batch_size)
@@ -262,17 +262,17 @@ if y_train is not None:
         mean_val_loss = np.mean(val_losses)
         print(f"Validation: acc={val_acc:.4f}  precision={val_precision:.4f}  recall={val_recall:.4f}  f1={val_f1:.4f}  loss={mean_val_loss:.4f}")
 
-    # ========== 9. 保存模型 ==========
+    # ========== 9. Save Model ==========
     model.save_weights(save_model_weights)
-    print(f"训练完成，权重保存为 {save_model_weights}")
+    print(f"Training completed, weights saved to {save_model_weights}")
 else:
-    print("未检测到训练集标签，不进行训练，仅推理。")
+    print("No training labels detected, skipping training, inference only.")
 
-# ========== 10. 测试集推理 ==========
-print("\n===== 测试集推理 =====")
+# ========== 10. Test Set Inference ==========
+print("\n===== Inference on Test Set =====")
 model = build_bert_dpcnn_supcon_model(max_length, feature_dim, num_blocks)
 model.load_weights(save_model_weights)
-print("模型权重加载成功")
+print("Model weights loaded successfully")
 
 test_dataset = tf.data.Dataset.from_tensor_slices(X_test).batch(batch_size)
 all_probs, all_features = [], []
@@ -284,7 +284,7 @@ probs = np.concatenate(all_probs).reshape(-1)
 features = np.concatenate(all_features)
 preds = (probs > 0.5).astype(int)
 
-# ========== 11. 保存测试结果 ==========
+# ========== 11. Save Test Results ==========
 result_df = pd.DataFrame({
     'text': texts_test,
     'probability': probs,
@@ -294,23 +294,23 @@ for i in range(features.shape[1]):
     result_df[f'feature_{i}'] = features[:, i]
 output_csv = os.path.join(output_dir, 'test_results.csv')
 result_df.to_csv(output_csv, index=False, encoding='utf-8-sig')
-print(f"测试结果已保存至 {output_csv}")
+print(f"Test results saved to {output_csv}")
 
-# ========== 12. 如果有标签，输出评估 ==========
+# ========== 12. Evaluation Metrics (If Labels Exist) ==========
 if y_test is not None:
     y_true = y_test
     acc = accuracy_score(y_true, preds)
     f1 = f1_score(y_true, preds)
     precision = precision_score(y_true, preds)
     recall = recall_score(y_true, preds)
-    print("\n===== 评估结果 =====")
+    print("\n===== Evaluation Results =====")
     print(f"Accuracy: {acc:.4f}")
     print(f"F1 Score: {f1:.4f}")
     print(f"Precision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
 else:
-    print("\n测试集未包含标签，无法计算评估指标")
+    print("\nTest set does not contain labels, evaluation metrics cannot be calculated.")
 
-# ========== 13. 预测样例展示 ==========
-print("\n===== 预测样例 =====")
+# ========== 13. Prediction Samples Display ==========
+print("\n===== Prediction Samples =====")
 print(result_df.head(10))
